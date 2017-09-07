@@ -25,9 +25,9 @@ I haven't done anything w.r.t the response. Maybe it would set a flag to show st
 A HomeVision serial command to turn it on would be:
 <pre>
      wemo: [device]  [0|off|1|on|2|toggle];
-/<pre>
+</pre>
 Can also control it via the NetIO plug-in:
 <pre>
      sends: netioaction wemo [device ]  [0|off|1|on|2|toggle]
- </pre>  
+</pre>  
 See also this Project's [Wiki page](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/wiki) for more details.
