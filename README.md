@@ -30,4 +30,4 @@ Can also control it via the NetIO plug-in:
 <pre>
      sends: netioaction wemo [device ]  [0|off|1|on|2|toggle]
 </pre>  
-See also this Project's [Wiki page](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/wiki) for more details.
+See also this Project's [Wiki page](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/wiki/ESP8266-Wemo-and-HomeVisionXL-Plug-in) for more details.
