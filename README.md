@@ -8,7 +8,7 @@ This project is based on the work of Nassir Malik. See his Youtube tutorials at 
 
 <b> This is a work-in-progress and is subject to change.</b>
 
-In This project you will be able to control an ESP8266 device as a Belkin Wemo. HomeVision control of the devices is achieved via a HomeVisionXL plug-in.
+In this project you will be able to control an ESP8266 device as a Belkin Wemo. HomeVision control of the devices is achieved via a HomeVisionXL plug-in.
 
 The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.
 The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
