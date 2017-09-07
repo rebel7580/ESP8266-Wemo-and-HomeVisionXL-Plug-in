@@ -1,0 +1,469 @@
+# Wemo plugin for HomeVision - Ron Boston
+# Version 1.0
+# $Revision: 1.1 $
+# $Date: 2017/09/05 05:36:11 $
+
+hvImport debug
+
+set version {$Id: wemo.hap,v 1.1 2017/09/05 05:36:11 ron Exp $}
+debug "$version" blue
+
+tcl::tm::path add [file dirname [info script]]
+
+array set cfg {
+    serPre "wemo:"
+    serPost ";"
+    netioType "wemo"
+    geometry  ""
+}
+
+set sockChan ""
+
+# Set up socket to Wemo
+proc startclient {ip} {
+    global cfg sockChan
+
+    catch {close $sockChan}
+    if {$ip eq ""} {
+        debug "Wemo ip not set" red
+        return -code error "Wemo ip not set"
+    }
+    debug "(Re)starting Client" blue
+    if {[catch {socket $ip 80} sockChan]} {
+        debug "*** Client FAILED ***: $sockChan" red
+        return -code error $sockChan
+    }
+    chan configure $sockChan -blocking 0
+    debug "Client Started: $sockChan" darkslategray
+    chan event $sockChan readable [list readdata $sockChan]
+    return 1
+}
+
+# Get ip for device
+proc getip {name} {
+
+    mk::cursor create row cfg.devices
+    foreach n [mk::select $row name $name] {
+        mk::cursor position row $n
+        debug "n: $n; ip: [mk::get $row ip]"
+        return [mk::get $row ip]
+    }
+    debug "fail to find"
+    return 0
+}
+
+# Send command through socket
+proc sendCmd {name cmd} {
+    global sockChan
+
+    set ip [getip $name]
+    if {$ip == 0} {return}
+    if {[catch {startclient $ip}]} {return}
+    debug "$sockChan: $cmd" darkred
+    if {[catch {puts $sockChan $cmd} result]} {
+        debug "Write error: $result" red
+    }
+    if {[catch {flush $sockChan} result]} {
+        debug "flush error $result" red
+    }
+}
+
+# Create command to send
+proc createCmd {cmd} {
+
+    if {[string tolower $cmd] in {1 "on"}} {
+        set state 1
+    } elseif {[string tolower $cmd] in {0 "off"}} {
+        set state 0
+    } elseif {[string tolower $cmd] in {2 "toggle"}} {
+        set state 2
+    } else {
+        set state 0
+    }
+
+    set data "GET "
+    append data "/switch?st=" $state " HTTP/1.1" \n
+    append data "Content-Type: text/plain" \n
+    append data "Content-Length: 0" \n \n
+    return $data
+}
+
+# Read response
+proc readdata {f} {
+    set line ""
+    if {[eof $f] || [catch {gets $f line} result]} {
+        debug "no input" blue
+        close $f
+    } elseif {$result != -1} {
+        debug  "$line" green
+    } else {
+        debug "Done"
+    }
+}
+
+# netioaction is called by NetIO "netioaction" command.
+# Example: sends: netioaction wemo name [0|off|1|on|2|toggle]
+# "wemo" must match config's netioType.
+# "name" must match an allowed device name.
+hvPublic netioaction
+proc netioaction {args} {
+    global cfg
+    lassign $args type name state
+    if {$type ne $cfg(netioType)} {return ""}
+    if {$state eq ""} {return ""}
+    sendCmd $name [createCmd $state]
+}
+
+# netio is called by NetIO "get" command.
+# Example: reads: get wemo state 0 {value}
+# "wemo" must match config's netioType.
+# "state" is a don't care, but something must be present.
+# "0" is a don't care, but something must be present.
+# "value" is the name of the info to be returned.
+# Note: Not yet implemented to return anything useful.
+hvPublic netio
+proc netio {type args} {
+    global cfg
+    if {$type ne $cfg(netioType)} {return ""}
+    # Can't get anything from the Wemo yet, return "unknown" for now
+    return "Unknown item $args"
+}
+
+# Serial string to trigger switch
+# Example: Wemo: name [0|off|1|on|2|toggle];
+# "Wemo:" should be config's serPre (serial Prefix string).
+# "name" must match an allowed device name.
+# ";" should be config's serPost (serial terminator character(s)).
+# A single space must follow serPre and precede the key string.
+proc wemoserial {data} {
+    global cfg
+    debug "serial: $data" red
+    set fmt "$cfg(serPre) (\\w+)\\s+(\\w+)$cfg(serPost)"
+    if {![regexp -nocase $fmt $data match name state]} {
+        debug "fail"
+        return 0
+    } elseif {$name eq ""} {
+        return -1
+    } else {
+        sendCmd $name [createCmd $state]
+        return [string length $match]
+    }
+}
+
+# Config Section
+# Get the config info from cfg file
+proc loadconfig {} {
+    global cfgfile cfg
+    package require Mk4tcl
+
+    set suffix [hvVariable ApplicationSuffix]
+    if {$suffix eq ""} {
+        set cfgfile wemo.cfg
+    } else {
+        set cfgfile wemo-$suffix.cfg
+    }
+    mk::file open cfg
+    if {![catch {hvConfigFile open $cfgfile} f]} {
+        mk::file load cfg $f
+        close $f
+    }
+    # General settings
+    mk::view layout cfg.main {
+        name value
+    }
+    # Devices
+    mk::view layout cfg.devices {
+        name ip
+    }
+    if {[catch {hvConfig Geometry} geometry]} {
+	set geometry ""
+    }
+
+    # update config
+    mk::loop row cfg.main {
+        array set cfg [mk::get $row name value]
+    }
+}
+
+# Save config changes to cfg file
+proc saveconfig {{top ""}} {
+    global cfg cfgfile
+    if {[winfo exists .net]} {
+        set cfg(geometry) [wm geometry .net]
+    }
+    mk::view size cfg.main 0
+    foreach {var val} [array get cfg] {
+        mk::row append cfg.main name $var value $val
+    }
+    set bkup wemo-[pid].$$$
+    set rc [catch {hvConfigFile create $bkup w} f]
+    if {$rc == 0} {
+        mk::file save cfg $f
+        close $f
+        hvConfigFile delete $cfgfile
+        hvConfigFile rename $bkup $cfgfile
+    } elseif {$top ne ""} {
+        ttk::messageBox -parent $top -message $f -icon error -type ok
+    } else {
+        debug "Failed to save configuration: $f"
+    }
+    return [expr {!$rc}]
+}
+
+# Wemo configuration screen
+proc cfg_server {} {
+    global cfg
+    if {[winfo exists .net]} {
+        wm withdraw .net
+        wm deiconify .net
+        return
+    }
+    ttk::toplevel .net
+    wm withdraw .net
+    wm title .net "Wemo Configuration"
+    wm resizable .net 0 0
+
+    ttk::frame .net.f
+    ttk::frame .net.f.f1 -relief groove -borderwidth 2
+
+    ttk::frame .net.f.f1.ni
+    ttk::frame .net.f.f1.ni.f
+    ttk::treeview .net.f.f1.ni.f.tv -columns {name ip} \
+      -displaycolumns {name ip} -show headings -height 5 \
+      -yscrollcommand {.net.f.f1.ni.f.vs set} -selectmode browse
+    .net.f.f1.ni.f.tv column name -stretch 1 -width 120 -anchor center
+    .net.f.f1.ni.f.tv heading name -text "Device Name"
+    .net.f.f1.ni.f.tv column ip -stretch 1 -width 140 -anchor center
+    .net.f.f1.ni.f.tv heading ip -text "IP Addr"
+    ttk::scrollbar .net.f.f1.ni.f.vs -command {.net.f.f1.ni.f.tv yview}
+    grid .net.f.f1.ni.f.tv .net.f.f1.ni.f.vs -sticky news
+    grid columnconfigure .net.f.f1.ni.f .net.f.f1.ni.f.tv -weight 1
+    grid rowconfigure .net.f.f1.ni.f .net.f.f1.ni.f.tv -weight 1
+    ttk::button .net.f.f1.ni.b1 -text Edit -command cfg_userchgdlg -state disabled
+    ttk::button .net.f.f1.ni.b2 -text New -command cfg_useradddlg
+    ttk::button .net.f.f1.ni.b3 -text Delete -command cfg_userdel -state disabled
+    grid .net.f.f1.ni.f - - -padx 4 -pady 4 -sticky wens
+    grid .net.f.f1.ni.b1 .net.f.f1.ni.b2 .net.f.f1.ni.b3 -padx 4 -pady 4 -sticky ew
+    grid columnconfigure .net.f.f1.ni all -weight 1
+    grid rowconfigure .net.f.f1.ni .net.f.f1.ni.f -weight 1
+    bind .net.f.f1.ni.f.tv <<TreeviewSelect>> {cfg_devicesel %W}
+    bind .net.f.f1.ni.f.tv <Double-1> {cfg_userdbl %W %x %y}
+    mk::loop row cfg.devices {
+	.net.f.f1.ni.f.tv insert {} end -values [mk::get $row name ip]
+    }
+
+    ttk::separator .net.f.f1.sep
+    ttk::label .net.f.f1.l9 -text "Netio string:" -anchor w
+    ttk::entry .net.f.f1.e9 -width 10 -justify center -textvariable cfg(netioType)
+    ttk::label .net.f.f1.l10 -text "Serial string prefix string:" -anchor w
+    ttk::entry .net.f.f1.e10 -width 10 -justify center -textvariable cfg(serPre)
+    ttk::label .net.f.f1.l11 -text "Serial string terminator character(s):" -anchor w
+    ttk::entry .net.f.f1.e11 -width 5 -justify center -textvariable cfg(serPost)
+
+    grid .net.f.f1.ni -column 0 -columnspan 2 -sticky nws -padx 3
+
+    grid .net.f.f1.sep -column 0 -columnspan 2 -sticky ew -padx 3 -pady 3
+    grid .net.f.f1.l9 .net.f.f1.e9   -sticky nws -padx 3
+    grid configure .net.f.f1.l9      -sticky nes -padx 3
+    grid .net.f.f1.l10 .net.f.f1.e10 -sticky nws -padx 3
+    grid configure .net.f.f1.l10     -sticky nes -padx 3
+    grid .net.f.f1.l11 .net.f.f1.e11 -sticky nws -padx 3
+    grid configure .net.f.f1.l11     -sticky nes -padx 3
+
+    grid columnconfigure .net.f.f1 1 -weight 1
+    grid .net.f.f1 -sticky news  -padx 5 -pady 5
+    grid .net.f    -sticky we    -padx 5 -pady 5 -columnspan 2
+
+    ttk::button .net.b3 -text Done -width 8 -command cfg_done
+    wm protocol .net WM_DELETE_WINDOW {.net.b3 invoke}
+    grid  x .net.b3 -padx {4 13} -pady {2 8} -sticky ne
+    grid columnconfigure .net 2 -weight 1
+    grid columnconfigure .net {0 1} -uniform 1
+
+    if {[regexp {\+-?[0-9]+\+-?[0-9]+} $cfg(geometry) loc]} {
+        wm geometry .net $loc
+    }
+    wm deiconify .net
+
+}
+
+proc cfg_pluginmenu {} {
+    global cfg
+    set str "Wemo"
+    # Delete any existing menu entries
+    catch {hvMenu Configure delete $str}
+    catch {hvMenu Help delete $str}
+    if {![catch {hvMenu Main cget Plugins -menu} menu]} {
+        if {![catch {hvMenu $menu index $str} x] && $x ne "none"} {
+            hvMenu $menu delete $x
+            hvMenu Main delete Plugins
+        }
+    }
+    if {![catch {hvMenu Help cget Plugins -menu} help]} {
+        if {![catch {hvMenu $help index $str} x] && $x ne "none"} {
+            hvMenu $help delete $x
+            hvMenu Help delete Plugins
+        }
+    }
+    if {[catch {hvMenu Main cget Plugins -menu} menu]} {
+        set menu Main.plugins
+        hvMenu Main add cascade -label Plugins \
+          -menu $menu -underline 0
+    }
+    hvMenu $menu add command \
+      -label "Wemo" -command cfg_server
+
+    if {[hvHelpFile wemo.hlp]} {
+        if {[catch {hvMenu Help cget Plugins -menu} menu]} {
+            set menu Help.plugins
+            hvMenu Help add cascade -label Plugins -menu $menu
+        }
+        hvMenu $menu add command -label "Wemo" \
+          -command [list hvHelp index]
+    }
+}
+
+proc cfg_devicesel {w} {
+    if {[llength [$w selection]]} {
+        .net.f.f1.ni.b1 state !disabled
+        .net.f.f1.ni.b3 state !disabled
+    } else {
+        .net.f.f1.ni.b1 state disabled
+        .net.f.f1.ni.b3 state disabled
+    }
+}
+
+proc cfg_userdbl {w x y} {
+    # Use identify row instead of item for compatibility with 8.5.8 and 8.5.9
+    if {[$w identify row $x $y] ne ""} {
+        .net.f.f1.ni.b1 invoke
+    }
+}
+
+proc cfg_uservalidate {str var} {
+
+    upvar #0 $var other
+    if {$var eq "wemoname"} {
+    	set name $other
+    	set ip $str
+    } else {
+    	set ip $other
+    	set name $str
+    }
+#    debug "name:$name; ip:$ip;" red
+#    set tst [regexp {^[12]?[0-9]?[0-9](\.[12]?[0-9]?[0-9]){3}$} $ip match]
+#    debug "tst:$tst;strlen:[string length $name]" red
+    if {[string length $name] < 4 || \
+        ![regexp {^[12]?[0-9]?[0-9](\.[12]?[0-9]?[0-9]){3}$} $ip match]} {
+        .net.usr.f.b1 state disabled
+    } else {
+        .net.usr.f.b1 state !disabled
+    }
+    return 1
+}
+
+proc cfg_userchgdlg {} {
+    global wemoname wemoip
+
+    cfg_useradddlg
+    set item [lindex [.net.f.f1.ni.f.tv selection] 0]
+    lassign [.net.f.f1.ni.f.tv item $item -values] wemoname wemoip
+    .net.usr.f.b1 configure -command [list cfg_userchg $item]
+    cfg_uservalidate $wemoname wemoip
+}
+
+proc cfg_userchg {item} {
+    global wemoname wemoip
+
+    set user [lindex [.net.f.f1.ni.f.tv item $item -values] 0]
+    if {$wemoname eq $user} {
+        # User name was not changed
+    } elseif {[llength [mk::select cfg.devices -exact name $wemoname]]} {
+        ttk::messageBox -parent .net.usr -icon error -type ok \
+          -message "Device $wemoname already exists"
+        return
+    }
+    foreach row [mk::select cfg_devices -count 1 -exact name $user] {
+        mk::set cfg.devices!$row name $wemoname ip $wemoip
+    }
+    .net.f.f1.ni.f.tv item $item \
+      -values [list $wemoname $wemoip]
+    destroy .net.usr
+}
+
+proc cfg_useradddlg {} {
+    global wemoname wemoip
+
+    set wemoname ""
+    set wemoip ""
+
+    ttk::toplevel .net.usr
+    wm title .net.usr "Configure Device"
+    wm transient .net.usr .net
+    wm withdraw .net.usr
+    ttk::label .net.usr.l1 -text "Name:" -anchor w
+    ttk::entry .net.usr.e1 -width 20 -textvariable wemoname \
+      -validate all -validatecommand {cfg_uservalidate %P wemoip}
+    ttk::label .net.usr.l2 -text "IP:" -anchor w
+    ttk::entry .net.usr.e2 -width 20  -textvariable wemoip \
+      -validate all -validatecommand {cfg_uservalidate %P wemoname}
+    ttk::separator .net.usr.sep
+    ttk::frame .net.usr.f
+    ttk::button .net.usr.f.b1 -text OK -width 6 -command cfg_useradd \
+      -state disabled
+    ttk::button .net.usr.f.b2 -text Cancel -width 6 -command {destroy .net.usr}
+    grid .net.usr.f.b1 .net.usr.f.b2 -padx 20 -pady 4
+    grid anchor .net.usr.f center
+    grid .net.usr.l1 .net.usr.e1 -padx 4 -pady 1 -sticky we
+    grid .net.usr.l2 .net.usr.e2 -padx 4 -pady 1 -sticky we
+    grid .net.usr.sep - -padx 2 -pady {2 0} -sticky we
+    grid .net.usr.f - -padx 4 -pady 3 -sticky we
+    grid columnconfigure .net.usr .net.usr.e1 -weight 1
+    bind .net.usr.e1 <Return> {.net.usr.f.b1 invoke}
+    bind .net.usr.e2 <Return> {.net.usr.f.b1 invoke}
+    bind .net.usr <F1> {hvHelp users}
+    center .net.usr .net
+    grab .net.usr
+}
+
+proc cfg_useradd {} {
+    global wemoname wemoip
+
+    if {[llength [mk::select cfg.devices -exact name $wemoname]]} {
+        ttk::messageBox -parent .net.usr -icon error -type ok \
+          -message "Device $wemoname already exists"
+        return
+    }
+    set row [mk::row append cfg.devices name $wemoname ip $wemoip]
+    .net.f.f1.ni.f.tv insert {} end \
+      -values [list $wemoname $wemoip $row]
+    destroy .net.usr
+}
+
+proc cfg_userdel {} {
+    set list [.net.f.f1.ni.f.tv selection]
+    foreach n $list {
+        set user [lindex [.net.f.f1.ni.f.tv item $n -values] 0]
+        foreach row [lreverse [mk::select cfg.devices -exact name $user]] {
+            mk::row delete cfg.devices!$row
+        }
+    }
+    .net.f.f1.ni.f.tv delete $list
+}
+
+proc cfg_done {} {
+    global sockChan
+    saveconfig
+    destroy .net
+}
+
+set gui [hvGuiInit]
+
+loadconfig
+
+if {$gui} {
+    cfg_pluginmenu
+    bind all <Key-KP_Enter> {event generate %W <Key-Return>}
+}
+
+hvTrigger $cfg(serPre) [list wemoserial]
