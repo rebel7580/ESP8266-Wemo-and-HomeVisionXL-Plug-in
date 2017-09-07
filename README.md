@@ -8,7 +8,7 @@ This project is based on the work of Nassir Malik. See his Youtube tutorials at 
 
 TCP code used to talk to the HomeVision system is a modified version from Big Dan the Blogging Man at https://bigdanzblog.wordpress.com/2016/02/09/esp8266arduino-ide-communicating-with-tcp/
 
-In This project you will be able to control an ESP8266 device as a Belkin Wemo. HomeVision control of the devices is achieved via a HomeVisionXl plug-in.
+In This project you will be able to control an ESP8266 device as a Belkin Wemo. HomeVision control of the devices is achieved via a HomeVisionXL plug-in.
 
 The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.
 The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
