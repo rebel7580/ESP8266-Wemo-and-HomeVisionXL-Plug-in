@@ -14,16 +14,20 @@ The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So 
 The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
 
 The http command is like this:
+<pre>
       http://192.168.xxx.yyy/switch?st=off
+</pre>
 Possible values for xx in "st=xx" are  0|off|1|on|2|toggle
 
 Response is "{device name} is {On|Off}"
 I haven't done anything w.r.t the response. Maybe it would set a flag to show state?
 
 A HomeVision serial command to turn it on would be:
-   wemo: [device]  [0|off|1|on|2|toggle];
-
+<pre>
+     wemo: [device]  [0|off|1|on|2|toggle];
+/<pre>
 Can also control it via the NetIO plug-in:
-   sends: netioaction wemo [device ]  [0|off|1|on|2|toggle]
-   
+<pre>
+     sends: netioaction wemo [device ]  [0|off|1|on|2|toggle]
+ </pre>  
 See also this Project's [Wiki page](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/wiki) for more details.
