@@ -8,10 +8,15 @@ This project is based on the work of Nassir Malik. See his Youtube tutorials at 
 
 <b> This is a work-in-progress and is subject to change.</b>
 
-In this project you will be able to control an ESP8266 device as a Belkin Wemo. HomeVision control of the devices is achieved via a HomeVisionXL plug-in.
+In this project you will be able to control an ESP8266 device as a Belkin Wemo.
+Edit the [ESP8266-Wemo-and-HomeVisionXL-Plug-in.ino]https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/ESP8266_Wemo_and_HomeVisionXL.ino code to include your WiFi SSID and passcode and a unique device name. This name will be used with Alexa.
+Right now, the code turns on/off the built-in LED and GPIO02, to which the LED is connected in the ESP8266-01s.
+You may need to change this for your particular hardware.
+Set up your ESP8266 for downloading and download the midified code to it.
 
-The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.
-The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
+You should be able to discover the device with Alexa. It will appear as a "WeMo Switch".
+
+HomeVision control of the devices is achieved via the [wemo.hap]https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap HomeVisionXL plug-in.  The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.  The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
 
 The http command is like this:
 <pre>
