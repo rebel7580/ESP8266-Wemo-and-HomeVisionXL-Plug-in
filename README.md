@@ -12,11 +12,13 @@ In this project you will be able to control an ESP8266 device as a Belkin Wemo.
 Edit the [ESP8266-Wemo-and-HomeVisionXL-Plug-in.ino](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/ESP8266_Wemo_and_HomeVisionXL.ino) code to include your WiFi SSID and passcode and a unique device name. This name will be used with Alexa.
 Right now, the code turns on/off the built-in LED and GPIO02, to which the LED is connected in the ESP8266-01s.
 You may need to change this for your particular hardware.
-Set up your ESP8266 for downloading and download the midified code to it.
+Set up your ESP8266 for downloading and download the modified code to it.
 
 You should be able to discover the device with Alexa. It will appear as a "WeMo Switch".
 
-HomeVision control of the devices is achieved via the [wemo.hap](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap) HomeVisionXL plug-in.  The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.  The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
+HomeVision control of the devices is achieved via the [wemo.hap](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap) HomeVisionXL plug-in.  The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.  The plug-in's configuration screen allows you to enter multiple device names and their corresponding IP addresses.
+You should set up static IPs for these devices since the plug-in does not search for them. These device names are how you address the devices from within HomeVisionXL. They do NOT need to be the same as the device names in the ESP8266 software.
+(A future feature may be to search for devices, retrieve both IP and device names and then populate the plug-in's device list with the results.)
 
 The http command is like this:
 <pre>
@@ -35,4 +37,6 @@ Can also control it via the NetIO plug-in:
 <pre>
      sends: netioaction wemo [device ]  [0|off|1|on|2|toggle]
 </pre>  
+The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
+
 See also this Project's [Wiki page](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/wiki/ESP8266-Wemo-and-HomeVisionXL-Plug-in) for more details.
