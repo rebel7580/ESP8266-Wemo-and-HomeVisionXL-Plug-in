@@ -1,11 +1,11 @@
 # Wemo plugin for HomeVision - Ron Boston
 # Version 1.0
-# $Revision: 1.1 $
-# $Date: 2017/09/05 05:36:11 $
+# $Revision: 1.2 $
+# $Date: 2017/09/10 20:07:10 $
 
 hvImport debug
 
-set version {$Id: wemo.hap,v 1.1 2017/09/05 05:36:11 ron Exp $}
+set version {$Id: wemo.hap,v 1.2 2017/09/10 20:07:10 ron Exp $}
 debug "$version" blue
 
 tcl::tm::path add [file dirname [info script]]
@@ -15,21 +15,130 @@ array set cfg {
     serPost ";"
     netioType "wemo"
     geometry  ""
+    discover 0
+    sortIp 0
+    sortName 0
 }
 
-set sockChan ""
+# Start M-Search section
 
-# Set up socket to Wemo
-proc startclient {ip} {
+# IANA assigned UPnP multicast address and port
+set mcastaddr 239.255.255.250
+set mcastport 1900
+set apiversion 1.15.0
+
+package require udp
+
+set udpChan ""
+set refresh 300
+set cfg(discover) 1
+set searchResults ""
+
+proc start_search {} {
+    global udpChan
+    global mcastaddr mcastport  serverport
+    global searchResults
+    unset searchResults
+    
+    # save any config changes before discovery
+    saveconfig
+    
+    # The reuse option will allow multiple apps to listen on the same UDP port.
+    if {[catch {udp_open $mcastport reuse} result]} {
+        # Some other UPnP application has already claimed the ssdp port
+        debug "can't open ssdp port" $result $::errorCode
+    }
+    set udpChan $result
+    # Join the multicast group
+    fconfigure $udpChan -mcastadd $mcastaddr -remote [list $mcastaddr $mcastport]
+    # Using "-buffering none" has the undesired side-effect that the implied
+    # newline of the puts command gets sent in a separate UDP package.
+    fconfigure $udpChan -blocking 0 -translation {auto crlf} -mcastloop 1
+    fileevent $udpChan readable [list receiveUDP]
+
+    # Send a M-Search Message for Wemo device
+    set msg {M-SEARCH * HTTP/1.1}
+    append msg \n "Host: 239.255.255.250:1900" \n
+    append msg {Man: "ssdp:discover"} \n "ST: urn:Belkin:device:**" \n
+    debug "$msg" red
+    puts $udpChan $msg
+    flush $udpChan
+}
+
+proc receiveUDP {} {
+    global udpChan refresh cfg
+    global searchResults
+
+    set data [read $udpChan]
+    # Discard false triggers
+    if {$data eq ""} return
+    set peer [fconfigure $udpChan -peer]
+    try {
+        # Bail out early on messages that can't be M-SEARCH responses.
+        set ldata [split $data \n]
+        if {![string equal [lindex $ldata 0] "HTTP/1.1 200 OK"]} return
+        set hdr [headers $ldata]
+	if {![dict exists $hdr st] || ![dict exists $hdr location]} return
+	if {"urn:Belkin:device:**" ni [dict get $hdr st]} return
+	if {[regexp {http://([0-9\.]+):([0-9]+)/*} [dict get $hdr location] --> ip port]} {
+            debug "ip,port: $ip,$port"
+            if {$cfg(discover)} {
+                regexp {^(uuid:.+)::.+$} [dict get $hdr usn] match usn
+                debug $usn red
+                dict set searchResults $usn ip $ip
+                dict set searchResults $usn port $port
+                debug "search results: $searchResults"  red
+                after cancel getDeviceNames
+                after 2000 getDeviceNames
+            }
+        }
+	if {[dict exists $hdr cache-control]} {
+	    set time [lindex [split [dict get $hdr cache-control] '='] 1]
+	    debug "time:$time" red
+	    if {$time < $refresh} {
+	        set time $refresh
+	    }
+	} else {
+	    set time $refresh
+	}
+	after cancel start_search
+	after [expr {$time * 1000}] start_search
+
+        after 2000 {
+            catch {close $udpChan}
+            debug "UDP closed" darkred
+        }
+    } on return - {
+        debug "$data" blue
+    }
+}
+
+proc headers {data} {
+    set rc {}
+    foreach line $data {
+	if {[regexp {^([^][()<>@,;:\\""/?={}\s]+):\s*(.*)} \
+            [string trimright $line] -> name value]} {
+	    dict set rc [string tolower $name] $value
+	    debug "name:value: $name,$value" blue
+	}
+    }
+    return $rc
+}
+
+# End M-Search ection
+
+# Start Http section
+
+set sockChan ""
+package require tdom
+
+# Set up socket to Wemo Device
+proc startclient {ip port} {
     global cfg sockChan
 
     catch {close $sockChan}
-    if {$ip eq ""} {
-        debug "Wemo ip not set" red
-        return -code error "Wemo ip not set"
-    }
-    debug "(Re)starting Client" blue
-    if {[catch {socket $ip 80} sockChan]} {
+    debug "(Re)starting Client, $ip:$port" blue
+    if {[catch {socket $ip $port} sockChan]} {
         debug "*** Client FAILED ***: $sockChan" red
         return -code error $sockChan
     }
@@ -39,27 +148,55 @@ proc startclient {ip} {
     return 1
 }
 
+proc getDeviceNames {} {
+    global searchResults
+
+    debug "getDeviceNames: $searchResults" red
+    dict for {udn info} $searchResults {
+        if {[dict exists $searchResults $udn done]} {continue}
+        dict with info {
+            debug "found new entry: $info" green
+            dict set searchResults $udn done 1
+            set cmd "GET "
+            append cmd "/setup.xml HTTP/1.1" \n
+            append cmd "Content-Type: text/xml" \n
+            append cmd "Content-Length: 0" \n \n
+            sendCmd "" $cmd $ip $port
+            after 200 getDeviceNames 
+            return            
+        }
+    }
+}
+
 # Get ip for device
 proc getip {name} {
 
-    mk::cursor create row cfg.devices
-    foreach n [mk::select $row name $name] {
-        mk::cursor position row $n
-        debug "n: $n; ip: [mk::get $row ip]"
-        return [mk::get $row ip]
+     set n [mk::select cfg.devices!0 name $name]
+     if {$n != {}} {
+        return [mk::get cfg.devices!$n ip port]
     }
-    debug "fail to find"
-    return 0
+    debug "failed to find device $name"
+    return [list 0 0]
 }
 
 # Send command through socket
-proc sendCmd {name cmd} {
+proc sendCmd {name cmd {ip 0} {port 0}} {
     global sockChan
 
-    set ip [getip $name]
-    if {$ip == 0} {return}
-    if {[catch {startclient $ip}]} {return}
-    debug "$sockChan: $cmd" darkred
+    lassign [getip $name] tip tport
+    if {$ip != 0} {
+    } elseif {$tip in {0 ""}} {
+        return
+    } else {
+        set ip $tip
+    }
+    if {$port != 0} {
+    } elseif {$tport in {0 ""}} {
+        set port 80
+    } else {
+        set port $tport
+    }
+    if {[catch {startclient $ip $port}]} {return}
     if {[catch {puts $sockChan $cmd} result]} {
         debug "Write error: $result" red
     }
@@ -96,10 +233,71 @@ proc readdata {f} {
         close $f
     } elseif {$result != -1} {
         debug  "$line" green
+        if {[string match {<\?xml *} $line]} {
+            parseSetup $line
+        }
     } else {
         debug "Done"
     }
 }
+
+# parse resposnse to setup.xml
+proc parseSetup {data} {
+    global searchResults
+    
+    # Hack to take off <?xml> tag
+    set xml [string range $data 21 end]
+    
+    if {[catch {dom parse $xml doc}]} {return}
+
+    set root [$doc documentElement]
+
+    if {[set node [$root selectNodes /root/device/friendlyName]] eq ""} {
+        debug "No FriendlyName" red
+        return
+    }
+    if {![$node hasChildNodes]} {
+        debug "No FriendlyName data" red
+        return        
+    }
+    set fn [[$node firstChild] data]
+    if {$fn eq ""} {
+        debug "FriendlyName is null" red
+        return
+    }
+    debug "FriendlyName:$fn"
+    if {[set node [$root selectNodes /root/device/UDN]] eq ""} {
+         debug "no UDN" red 
+       return
+    }
+    if {![$node hasChildNodes]} {
+        debug "no UDN data" red 
+        return
+    }
+    set udn [[$node firstChild] data]
+    if {$udn eq ""} {
+        debug "UDN is null" red
+        return
+    }
+    debug "fn:$fn;udn:$udn" blue
+    
+    if {![dict exists $searchResults $udn]} {return}
+    dict set searchResults $udn fn $fn
+    set ip [dict get $searchResults $udn ip]
+    set port [dict get $searchResults $udn port]
+    set row [mk::select cfg.devices -exact ip $ip]
+    if {[llength $row]} {
+        mk::set cfg.devices!$row name $fn port $port
+    } else {
+        set row [mk::row append cfg.devices name $fn ip $ip port $port]
+    }
+
+    cfg_sortlist
+}
+
+# End Http section
+
+# Start Trigger section
 
 # netioaction is called by NetIO "netioaction" command.
 # Example: sends: netioaction wemo name [0|off|1|on|2|toggle]
@@ -150,7 +348,10 @@ proc wemoserial {data} {
     }
 }
 
-# Config Section
+# End Trigger section
+
+# Start Config Section
+
 # Get the config info from cfg file
 proc loadconfig {} {
     global cfgfile cfg
@@ -173,7 +374,7 @@ proc loadconfig {} {
     }
     # Devices
     mk::view layout cfg.devices {
-        name ip
+        name ip port
     }
     if {[catch {hvConfig Geometry} geometry]} {
 	set geometry ""
@@ -228,29 +429,34 @@ proc cfg_server {} {
 
     ttk::frame .net.f.f1.ni
     ttk::frame .net.f.f1.ni.f
-    ttk::treeview .net.f.f1.ni.f.tv -columns {name ip} \
-      -displaycolumns {name ip} -show headings -height 5 \
+    ttk::treeview .net.f.f1.ni.f.tv -columns {name ip port} \
+      -displaycolumns {name ip port} -show headings -height 5 \
       -yscrollcommand {.net.f.f1.ni.f.vs set} -selectmode browse
     .net.f.f1.ni.f.tv column name -stretch 1 -width 120 -anchor center
-    .net.f.f1.ni.f.tv heading name -text "Device Name"
+    .net.f.f1.ni.f.tv heading name -text "Device Name" -command [list cfg_sort name]
     .net.f.f1.ni.f.tv column ip -stretch 1 -width 140 -anchor center
-    .net.f.f1.ni.f.tv heading ip -text "IP Addr"
+    .net.f.f1.ni.f.tv heading ip -text "IP Addr" -command [list cfg_sort ip]
+    .net.f.f1.ni.f.tv column port -stretch 1 -width 80 -anchor center
+    .net.f.f1.ni.f.tv heading port -text "Port"
     ttk::scrollbar .net.f.f1.ni.f.vs -command {.net.f.f1.ni.f.tv yview}
     grid .net.f.f1.ni.f.tv .net.f.f1.ni.f.vs -sticky news
     grid columnconfigure .net.f.f1.ni.f .net.f.f1.ni.f.tv -weight 1
     grid rowconfigure .net.f.f1.ni.f .net.f.f1.ni.f.tv -weight 1
-    ttk::button .net.f.f1.ni.b1 -text Edit -command cfg_userchgdlg -state disabled
-    ttk::button .net.f.f1.ni.b2 -text New -command cfg_useradddlg
-    ttk::button .net.f.f1.ni.b3 -text Delete -command cfg_userdel -state disabled
+    ttk::button .net.f.f1.ni.b1 -text Edit -command cfg_namechgdlg -state disabled
+    ttk::button .net.f.f1.ni.b2 -text New -command cfg_nameadddlg
+    ttk::button .net.f.f1.ni.b3 -text Delete -command cfg_namedel -state disabled
     grid .net.f.f1.ni.f - - -padx 4 -pady 4 -sticky wens
     grid .net.f.f1.ni.b1 .net.f.f1.ni.b2 .net.f.f1.ni.b3 -padx 4 -pady 4 -sticky ew
+    ttk::checkbutton .net.f.f1.ni.c1 -text "Allow Discovery" -variable cfg(discover) \
+       -command cfg_allow_discover
+    ttk::button .net.f.f1.ni.b4 -text Discover -width 6 -command start_search \
+      -state disabled
+    grid  .net.f.f1.ni.c1 .net.f.f1.ni.b4  -padx 4 -pady 4 -sticky ew
     grid columnconfigure .net.f.f1.ni all -weight 1
     grid rowconfigure .net.f.f1.ni .net.f.f1.ni.f -weight 1
     bind .net.f.f1.ni.f.tv <<TreeviewSelect>> {cfg_devicesel %W}
-    bind .net.f.f1.ni.f.tv <Double-1> {cfg_userdbl %W %x %y}
-    mk::loop row cfg.devices {
-	.net.f.f1.ni.f.tv insert {} end -values [mk::get $row name ip]
-    }
+    bind .net.f.f1.ni.f.tv <Double-1> {cfg_namedbl %W %x %y}
+    cfg_sortlist
 
     ttk::separator .net.f.f1.sep
     ttk::label .net.f.f1.l9 -text "Netio string:" -anchor w
@@ -284,6 +490,7 @@ proc cfg_server {} {
         wm geometry .net $loc
     }
     wm deiconify .net
+    cfg_allow_discover
 
 }
 
@@ -333,14 +540,56 @@ proc cfg_devicesel {w} {
     }
 }
 
-proc cfg_userdbl {w x y} {
+proc cfg_namedbl {w x y} {
     # Use identify row instead of item for compatibility with 8.5.8 and 8.5.9
     if {[$w identify row $x $y] ne ""} {
         .net.f.f1.ni.b1 invoke
     }
 }
 
-proc cfg_uservalidate {str var} {
+# IP portion from BBH at http://wiki.tcl.tk/1899
+proc cfg_validate {str type var} {
+    global wemoport wemoip wemoname
+    upvar #0 $var other
+     
+    if {$var eq "wemoname"} {
+    	set name $other
+    	set ip $str
+        set port $wemoport
+    } elseif {$var eq "wemoip"} {
+    	set ip $other
+    	set name $str
+        set port $wemoport
+    } elseif {$var eq "wemoport"} {
+        set port $str
+        set ip $wemoip
+        set name $wemoname
+    }    
+    set ipnum1 {\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5]}
+    set ipnum2 {\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5]}
+    set ipnum3 {\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5]}
+    set ipnum4 {\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5]}
+    set fullExp {^($ipnum1)\.($ipnum2)\.($ipnum3)\.($ipnum4)$}
+    set partialExp {^(($ipnum1)(\.(($ipnum2)(\.(($ipnum3)(\.(($ipnum4)?)?)?)?)?)?)?)?$}
+    set fullExp [subst -nocommands -nobackslashes $fullExp]
+    set partialExp [subst -nocommands -nobackslashes $partialExp]
+
+    if {[regexp -- $fullExp $ip] && \
+          [string length $name] >= 3 && [regexp {^[a-zA-Z]+$} $name] && \
+          $port > 0 && $port < 65536} {        
+        .net.usr.f.b1 state !disabled
+        return 1
+    } else {
+        .net.usr.f.b1 state disabled
+        if {$var eq "wemoname"} { 
+            return [regexp -- $partialExp $ip]
+        } else {
+            return 1
+        }
+    }
+}
+
+proc old_cfg_namevalidate {str var} {
 
     upvar #0 $var other
     if {$var eq "wemoname"} {
@@ -350,10 +599,7 @@ proc cfg_uservalidate {str var} {
     	set ip $other
     	set name $str
     }
-#    debug "name:$name; ip:$ip;" red
-#    set tst [regexp {^[12]?[0-9]?[0-9](\.[12]?[0-9]?[0-9]){3}$} $ip match]
-#    debug "tst:$tst;strlen:[string length $name]" red
-    if {[string length $name] < 4 || \
+    if {[string length $name] < 3 || \
         ![regexp {^[12]?[0-9]?[0-9](\.[12]?[0-9]?[0-9]){3}$} $ip match]} {
         .net.usr.f.b1 state disabled
     } else {
@@ -362,40 +608,41 @@ proc cfg_uservalidate {str var} {
     return 1
 }
 
-proc cfg_userchgdlg {} {
-    global wemoname wemoip
+proc cfg_namechgdlg {} {
+    global wemoname wemoip wemoport
 
-    cfg_useradddlg
+    cfg_nameadddlg
     set item [lindex [.net.f.f1.ni.f.tv selection] 0]
-    lassign [.net.f.f1.ni.f.tv item $item -values] wemoname wemoip
-    .net.usr.f.b1 configure -command [list cfg_userchg $item]
-    cfg_uservalidate $wemoname wemoip
+    lassign [.net.f.f1.ni.f.tv item $item -values] wemoname wemoip wempport
+    .net.usr.f.b1 configure -command [list cfg_namechg $item]
+    cfg_validate $wemoname "" wemoip
 }
 
-proc cfg_userchg {item} {
-    global wemoname wemoip
+proc cfg_namechg {item} {
+    global wemoname wemoip wemoport
 
-    set user [lindex [.net.f.f1.ni.f.tv item $item -values] 0]
-    if {$wemoname eq $user} {
-        # User name was not changed
+    set name [lindex [.net.f.f1.ni.f.tv item $item -values] 0]
+    if {$wemoname eq $name} {
+        # Name was not changed
     } elseif {[llength [mk::select cfg.devices -exact name $wemoname]]} {
         ttk::messageBox -parent .net.usr -icon error -type ok \
           -message "Device $wemoname already exists"
         return
     }
-    foreach row [mk::select cfg_devices -count 1 -exact name $user] {
-        mk::set cfg.devices!$row name $wemoname ip $wemoip
+    foreach row [mk::select cfg_devices -count 1 -exact name $name] {
+        mk::set cfg.devices!$row name $wemoname ip $wemoip port $wemoport
     }
     .net.f.f1.ni.f.tv item $item \
-      -values [list $wemoname $wemoip]
+      -values [list $wemoname $wemoip $wemoport]
     destroy .net.usr
 }
 
-proc cfg_useradddlg {} {
-    global wemoname wemoip
+proc cfg_nameadddlg {} {
+    global wemoname wemoip wemoport
 
     set wemoname ""
     set wemoip ""
+    set wemoport "80"
 
     ttk::toplevel .net.usr
     wm title .net.usr "Configure Device"
@@ -403,19 +650,23 @@ proc cfg_useradddlg {} {
     wm withdraw .net.usr
     ttk::label .net.usr.l1 -text "Name:" -anchor w
     ttk::entry .net.usr.e1 -width 20 -textvariable wemoname \
-      -validate all -validatecommand {cfg_uservalidate %P wemoip}
+      -validate all -validatecommand "cfg_validate %P %V wemoip"
     ttk::label .net.usr.l2 -text "IP:" -anchor w
-    ttk::entry .net.usr.e2 -width 20  -textvariable wemoip \
-      -validate all -validatecommand {cfg_uservalidate %P wemoname}
+    ttk::entry .net.usr.e2 -width 20 -textvariable wemoip \
+       -validate all -validatecommand "cfg_validate %P %V wemoname"
+    ttk::label .net.usr.l3 -text "Port:" -anchor w
+    ttk::entry .net.usr.e3 -width 20 -textvariable wemoport  \
+       -validate all -validatecommand "cfg_validate %P %V wemoport"
     ttk::separator .net.usr.sep
     ttk::frame .net.usr.f
-    ttk::button .net.usr.f.b1 -text OK -width 6 -command cfg_useradd \
+    ttk::button .net.usr.f.b1 -text OK -width 6 -command cfg_nameadd \
       -state disabled
     ttk::button .net.usr.f.b2 -text Cancel -width 6 -command {destroy .net.usr}
     grid .net.usr.f.b1 .net.usr.f.b2 -padx 20 -pady 4
     grid anchor .net.usr.f center
     grid .net.usr.l1 .net.usr.e1 -padx 4 -pady 1 -sticky we
     grid .net.usr.l2 .net.usr.e2 -padx 4 -pady 1 -sticky we
+    grid .net.usr.l3 .net.usr.e3 -padx 4 -pady 1 -sticky we
     grid .net.usr.sep - -padx 2 -pady {2 0} -sticky we
     grid .net.usr.f - -padx 4 -pady 3 -sticky we
     grid columnconfigure .net.usr .net.usr.e1 -weight 1
@@ -426,25 +677,92 @@ proc cfg_useradddlg {} {
     grab .net.usr
 }
 
-proc cfg_useradd {} {
-    global wemoname wemoip
+proc cfg_allow_discover {} {
+    global cfg
+    
+    if {$cfg(discover) == 1} {
+        .net.f.f1.ni.b4 state !disabled
+    } else {
+        .net.f.f1.ni.b4 state disabled
+        after cancel start_search
+    }
+}
+
+# set sort orders from clicked headers
+proc cfg_sort {type} {
+    global cfg
+    
+    if {$type eq "ip"} {
+        set cfg(sortName) 0
+        if {$cfg(sortIp) == 1} {
+            set cfg(sortIp) -1
+        } else {
+            set cfg(sortIp) 1
+        }
+    } else {
+        set cfg(sortIp) 0
+        if {$cfg(sortName) == 1} {
+            set cfg(sortName) -1
+        } else {
+            set cfg(sortName) 1
+        }
+    }
+    cfg_sortlist 
+}
+
+# Sort device list according to sort orders
+proc cfg_sortlist {} {
+    global cfg
+    
+    if {$cfg(sortName) == 0 && $cfg(sortIp) == 0} {
+        set rows [mk::select cfg.devices -globnc name "*"]
+    } elseif {$cfg(sortName) == 1} {
+        set rows [mk::select cfg.devices -sort name]
+    } elseif {$cfg(sortName) == -1} {
+        set rows [mk::select cfg.devices -rsort name]
+    } elseif {$cfg(sortIp) == 1} {
+        mk::loop row cfg.devices {
+            lappend ips [mk::get $row ip]
+        }
+        set ips [lsort -dictionary $ips]
+        foreach ip $ips {
+            lappend rows [mk::select cfg.devices ip $ip]
+        }
+    } elseif {$cfg(sortIp) == -1} {
+        mk::loop row cfg.devices {
+            lappend ips [mk::get $row ip]
+        }
+        set ips [lsort -decreasing -dictionary $ips]
+        foreach ip $ips {
+            lappend rows [mk::select cfg.devices ip $ip]
+        }
+    }
+    if {[winfo exist .net]} { 
+        .net.f.f1.ni.f.tv delete [.net.f.f1.ni.f.tv children {}]
+        foreach row $rows {
+            .net.f.f1.ni.f.tv insert {} end -values [mk::get cfg.devices!$row name ip port]
+        }
+    }
+}
+
+proc cfg_nameadd {} {
+    global wemoname wemoip wemoport
 
     if {[llength [mk::select cfg.devices -exact name $wemoname]]} {
         ttk::messageBox -parent .net.usr -icon error -type ok \
           -message "Device $wemoname already exists"
         return
     }
-    set row [mk::row append cfg.devices name $wemoname ip $wemoip]
-    .net.f.f1.ni.f.tv insert {} end \
-      -values [list $wemoname $wemoip $row]
+    set row [mk::row append cfg.devices name $wemoname ip $wemoip port $wemoport]
+    .net.f.f1.ni.f.tv insert {} end -values [list $wemoname $wemoip $wemoport]
     destroy .net.usr
 }
 
-proc cfg_userdel {} {
+proc cfg_namedel {} {
     set list [.net.f.f1.ni.f.tv selection]
     foreach n $list {
-        set user [lindex [.net.f.f1.ni.f.tv item $n -values] 0]
-        foreach row [lreverse [mk::select cfg.devices -exact name $user]] {
+        set name [lindex [.net.f.f1.ni.f.tv item $n -values] 0]
+        foreach row [lreverse [mk::select cfg.devices -exact name $name]] {
             mk::row delete cfg.devices!$row
         }
     }
@@ -453,9 +771,12 @@ proc cfg_userdel {} {
 
 proc cfg_done {} {
     global sockChan
+    
     saveconfig
     destroy .net
 }
+
+# End Configuration section
 
 set gui [hvGuiInit]
 
@@ -467,3 +788,4 @@ if {$gui} {
 }
 
 hvTrigger $cfg(serPre) [list wemoserial]
+
