@@ -1,11 +1,11 @@
 # Wemo plugin for HomeVision - Ron Boston
 # Version 1.0
-# $Revision: 1.2 $
-# $Date: 2017/09/10 20:07:10 $
+# $Revision: 1.3 $
+# $Date: 2017/09/10 22:55:45 $
 
 hvImport debug
 
-set version {$Id: wemo.hap,v 1.2 2017/09/10 20:07:10 ron Exp $}
+set version {$Id: wemo.hap,v 1.3 2017/09/10 22:55:45 ron Exp $}
 debug "$version" blue
 
 tcl::tm::path add [file dirname [info script]]
@@ -285,12 +285,17 @@ proc parseSetup {data} {
     dict set searchResults $udn fn $fn
     set ip [dict get $searchResults $udn ip]
     set port [dict get $searchResults $udn port]
-    set row [mk::select cfg.devices -exact ip $ip]
-    if {[llength $row]} {
-        mk::set cfg.devices!$row name $fn port $port
-    } else {
-        set row [mk::row append cfg.devices name $fn ip $ip port $port]
-    }
+    set row [mk::select cfg.devices name $fn]
+    debug "ip:$ip;port:$port;row:$row;" red
+    foreach i [lreverse $row] {
+        mk::row delete cfg.devices!$i
+    } 
+    set row [mk::select cfg.devices ip $ip]
+    debug "ip:$ip;port:$port;row:$row;" red
+    foreach i [lreverse $row] {
+        mk::row delete cfg.devices!$i
+    } 
+    mk::row append cfg.devices name $fn ip $ip port $port 
 
     cfg_sortlist
 }
@@ -621,17 +626,26 @@ proc cfg_namechgdlg {} {
 proc cfg_namechg {item} {
     global wemoname wemoip wemoport
 
-    set name [lindex [.net.f.f1.ni.f.tv item $item -values] 0]
-    if {$wemoname eq $name} {
+    lassign [.net.f.f1.ni.f.tv item $item -values] name ip
+    set row [mk::select cfg.devices -exact name $name]
+    
+    if {$wemoname eq $name && $wemoip eq $ip} {
         # Name was not changed
-    } elseif {[llength [mk::select cfg.devices -exact name $wemoname]]} {
-        ttk::messageBox -parent .net.usr -icon error -type ok \
-          -message "Device $wemoname already exists"
-        return
+    } else {
+        if {[llength [mk::select cfg.devices -exact name $wemoname]] &&  \
+             $row != [mk::select cfg.devices -exact name $wemoname]} {
+            ttk::messageBox -parent .net.usr -icon error -type ok \
+              -message "Name $wemoname already exists"
+            return
+        }
+        if {[llength [mk::select cfg.devices -exact ip $wemoip]] && \
+             $row != [mk::select cfg.devices -exact ip $wemoip]} {
+            ttk::messageBox -parent .net.usr -icon error -type ok \
+              -message "IP $wemoip already exists"
+            return
+        }
     }
-    foreach row [mk::select cfg_devices -count 1 -exact name $name] {
-        mk::set cfg.devices!$row name $wemoname ip $wemoip port $wemoport
-    }
+    mk::set cfg.devices!$row name $wemoname ip $wemoip port $wemoport
     .net.f.f1.ni.f.tv item $item \
       -values [list $wemoname $wemoip $wemoport]
     destroy .net.usr
