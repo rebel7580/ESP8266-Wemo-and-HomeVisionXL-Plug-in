@@ -16,26 +16,24 @@ Set up your ESP8266 for downloading and download the modified code to it.
 
 You should be able to discover the device with Alexa. It will appear as a "WeMo Switch".
 
-HomeVision control of the devices is achieved via the [wemo.hap](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap) HomeVisionXL plug-in.  The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.  The plug-in's configuration screen allows you to enter multiple device names and their corresponding IP addresses.
-You should set up static IPs for these devices since the plug-in does not search for them. These device names are how you address the devices from within HomeVisionXL. They do NOT need to be the same as the device names in the ESP8266 software.
-(A future feature may be to search for devices, retrieve both IP and device names and then populate the plug-in's device list with the results.)
+HomeVision control of the devices is achieved via the [wemo.hap](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap) HomeVisionXL plug-in.  The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.  The plug-in's configuration screen allows you to enter multiple device names and their corresponding IP addresses, or discover them.
 
 The http command is like this:
 <pre>
-      http://192.168.xxx.yyy/switch?st=off
+      http://192.168.xxx.yyy/switch?st=xx
 </pre>
-Possible values for xx in "st=xx" are  0|off|1|on|2|toggle
+Possible values for xx in "st=xx" are  0|off | 1|on | 2|toggle
 
 Response is "{device name} is {On|Off}"
 I haven't done anything w.r.t the response. Maybe it would set a flag to show state?
 
 A HomeVision serial command to turn it on would be:
 <pre>
-     wemo: [device]  [0|off|1|on|2|toggle];
+     wemo: [device]  [0|off | 1|on | 2|toggle];
 </pre>
 Can also control it via the NetIO plug-in:
 <pre>
-     sends: netioaction wemo [device ]  [0|off|1|on|2|toggle]
+     sends: netioaction wemo [device ]  [0|off | 1|on | 2|toggle]
 </pre>  
 The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
 
