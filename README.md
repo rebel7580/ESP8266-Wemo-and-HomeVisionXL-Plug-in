@@ -19,19 +19,6 @@ See Nassir Malik's tutorials for details if you need help doing this.
 1. The plug-in's configuration screen allows you to enter multiple device names and their corresponding IP addresses, or discover them.
 1. Test the plug-in my using the HomeVisionXL's Serial Command Test screen.
 1. Once you have it working via the Serial Command Test screen. you can include appropriate serial commands into your schedule.
-A HomeVision serial command to turn it on would be:
-<pre>
-     wemo: [device]  [0|off | 1|on | 2|toggle];
-</pre>
-1. You can use NetIO to control the devices as well. Set up buttons like this:
-<pre>
-     sends: netioaction wemo [device ]  [0|off | 1|on | 2|toggle]
-</pre>  
-1. The http command is like this:
-<pre>
-      http://192.168.xxx.yyy/switch?st=xx
-</pre>
-Possible values for xx in "st=xx" are  0|off | 1|on | 2|toggle
-1. The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
+1. You can use NetIO to control the devices as well.
 
 See also this Project's [Wiki page](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/wiki/ESP8266-Wemo-and-HomeVisionXL-Plug-in) for more details.
