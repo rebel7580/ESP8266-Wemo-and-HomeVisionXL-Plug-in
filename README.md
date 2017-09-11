@@ -15,29 +15,23 @@ You may need to change this for your particular hardware.
 Set up your ESP8266 for downloading and download the modified code to it.
 See Nassir Malik's tutorials for details if you need help doing this.
 1. Once downloaded, you should be able to discover the device with Alexa. It will appear as a "WeMo Switch" with the name you set in the code.
-1. HomeVision control of the devices is achieved via the [wemo.hap](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap) HomeVisionXL plug-in. Download the plug-in to your HomeVisionXl's plugin directory and enable it via the Plugin Manager.
+1. HomeVision control of the devices is achieved via the [wemo.hap](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap) HomeVisionXL plug-in. Download the plug-in to your HomeVisionXL's plugin directory and enable it via the Plugin Manager.
 1. The plug-in's configuration screen allows you to enter multiple device names and their corresponding IP addresses, or discover them.
-1. Test the plug-in my using the HoeVisionXL's Serial Command Test screen.
+1. Test the plug-in my using the HomeVisionXL's Serial Command Test screen.
 1. Once you have it working via the Serial Command Test screen. you can include appropriate serial commands into your schedule.
 A HomeVision serial command to turn it on would be:
 <pre>
      wemo: [device]  [0|off | 1|on | 2|toggle];
 </pre>
-
-The http command is like this:
+1. You can use NetIO to control the devices as well. Set up buttons like this:
+<pre>
+     sends: netioaction wemo [device ]  [0|off | 1|on | 2|toggle]
+</pre>  
+1. The http command is like this:
 <pre>
       http://192.168.xxx.yyy/switch?st=xx
 </pre>
 Possible values for xx in "st=xx" are  0|off | 1|on | 2|toggle
-
-Response is "{device name} is {On|Off}"
-I haven't done anything w.r.t the response. Maybe it would set a flag to show state?
-
-
-Can also control it via the NetIO plug-in:
-<pre>
-     sends: netioaction wemo [device ]  [0|off | 1|on | 2|toggle]
-</pre>  
-The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
+1. The http commands in the plug-in can be modified to do commands supported by other ESP8266 emulations.
 
 See also this Project's [Wiki page](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/wiki/ESP8266-Wemo-and-HomeVisionXL-Plug-in) for more details.
