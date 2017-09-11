@@ -9,14 +9,20 @@ This project is based on the work of Nassir Malik. See his Youtube tutorials at 
 <b> This is a work-in-progress and is subject to change.</b>
 
 In this project you will be able to control an ESP8266 device as a Belkin Wemo.
-Edit the [ESP8266-Wemo-and-HomeVisionXL-Plug-in.ino](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/ESP8266_Wemo_and_HomeVisionXL.ino) code to include your WiFi SSID and passcode and a unique device name. This name will be used with Alexa.
+1. Edit the [ESP8266-Wemo-and-HomeVisionXL-Plug-in.ino](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/ESP8266_Wemo_and_HomeVisionXL.ino) code to include your WiFi SSID and passcode and a unique device name. This name will be used with Alexa.
 Right now, the code turns on/off the built-in LED and GPIO02, to which the LED is connected in the ESP8266-01s.
 You may need to change this for your particular hardware.
 Set up your ESP8266 for downloading and download the modified code to it.
-
-You should be able to discover the device with Alexa. It will appear as a "WeMo Switch".
-
-HomeVision control of the devices is achieved via the [wemo.hap](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap) HomeVisionXL plug-in.  The plug-in goes with the ESP8266 code I have running on my "Wemo" emulator. So the two work together.  The plug-in's configuration screen allows you to enter multiple device names and their corresponding IP addresses, or discover them.
+See Nassir Malik's tutorials for details if you need help doing this.
+1. Once downloaded, you should be able to discover the device with Alexa. It will appear as a "WeMo Switch" with the name you set in the code.
+1. HomeVision control of the devices is achieved via the [wemo.hap](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/wemo.hap) HomeVisionXL plug-in. Download the plug-in to your HomeVisionXl's plugin directory and enable it via the Plugin Manager.
+1. The plug-in's configuration screen allows you to enter multiple device names and their corresponding IP addresses, or discover them.
+1. Test the plug-in my using the HoeVisionXL's Serial Command Test screen.
+1. Once you have it working via the Serial Command Test screen. you can include appropriate serial commands into your schedule.
+A HomeVision serial command to turn it on would be:
+<pre>
+     wemo: [device]  [0|off | 1|on | 2|toggle];
+</pre>
 
 The http command is like this:
 <pre>
@@ -27,10 +33,7 @@ Possible values for xx in "st=xx" are  0|off | 1|on | 2|toggle
 Response is "{device name} is {On|Off}"
 I haven't done anything w.r.t the response. Maybe it would set a flag to show state?
 
-A HomeVision serial command to turn it on would be:
-<pre>
-     wemo: [device]  [0|off | 1|on | 2|toggle];
-</pre>
+
 Can also control it via the NetIO plug-in:
 <pre>
      sends: netioaction wemo [device ]  [0|off | 1|on | 2|toggle]
