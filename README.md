@@ -4,7 +4,9 @@ Code to control ESP8266 Wemo emulating devices via HomeVision. Also natively sup
 
 <b>You must have a HomeVision Controller running HomeVisionXL software with the NetIO plug-in and an RCS TX-15B thermostat for this to work.</b>
 
-This project is based on the work of Nassir Malik. See his Youtube tutorials at https://www.youtube.com/channel/UCn8v7OzXk7IqRdKZdf14yjA and code at https://github.com/nassir-malik
+The ESP8266 part of this project is based on the work of Nassir Malik. See his Youtube tutorials at https://www.youtube.com/channel/UCn8v7OzXk7IqRdKZdf14yjA and code at https://github.com/nassir-malik
+
+The HomeVisionXl plug-in is based in part on the work of Schelte Bron.
 
 <b> This is a work-in-progress and is subject to change.</b>
 
