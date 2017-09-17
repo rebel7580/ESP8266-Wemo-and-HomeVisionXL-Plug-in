@@ -1,4 +1,4 @@
-# ESP8266-Wemo-and-HomeVisionXL-Plug-in
+# ESP8266-Wemo-Sonoff-and-HomeVisionXL-Plug-in
 
 Code to control ESP8266 Wemo emulating devices via HomeVision. Also natively supported by Alexa.
 
@@ -10,10 +10,9 @@ The HomeVisionXL plug-in is based in part on the work of Schelte Bron.
 
 <b> This is a work-in-progress and is subject to change.</b>
 
-In this project you will be able to control an ESP8266 device as a Belkin Wemo.
+In this project you will be able to control an ESP8266 Sonoff device as a Belkin Wemo.
+Nore: Other ESP8266 device types can be used, withappropriate relay and/or LED pin changes.
 1. Edit the [ESP8266-Wemo-Sonoff-and-HomeVisionXL-Plug-in.ino](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/blob/master/ESP8266_Wemo_Sonoff_and_HomeVisionXL/ESP8266_Wemo_Sonoff_and_HomeVisionXL.ino) code to include your WiFi SSID and passcode and a unique device name. This name will be used with Alexa.
-Right now, the code turns on/off the built-in LED and GPIO02, to which the LED is connected in the ESP8266-01s.
-You may need to change this for your particular hardware.
 Set up your ESP8266 for downloading and download the modified code to it.
 See Nassir Malik's tutorials for details if you need help doing this.
 1. Once downloaded, you should be able to discover the device with Alexa. It will appear as a "WeMo Switch" with the name you set in the code.
