@@ -1,12 +1,12 @@
 # Wemo plugin for HomeVision - Ron Boston
 # Parts borrowed from plug-ins written by Schelte Bron
 # Version 1.0
-# $Revision: 1.4 $
-# $Date: 2017/09/17 18:11:26 $
+# $Revision: 1.6 $
+# $Date: 2017/09/18 04:01:00 $
 
 hvImport debug
 
-set version {$Id: wemo.hap,v 1.4 2017/09/17 18:11:26 ron Exp $}
+set version {$Id: wemo.hap,v 1.6 2017/09/18 04:01:00 ron Exp $}
 debug "$version" blue
 
 tcl::tm::path add [file dirname [info script]]
@@ -300,7 +300,7 @@ proc parseSetup {data} {
     foreach i [lreverse $row] {
         mk::row delete cfg.devices!$i
     } 
-    mk::row append cfg.devices name $fn ip $ip port $port 
+    mk::row append cfg.devices name $fn ip $ip port $port dis 1
 
     cfg_sortlist
 }
@@ -384,7 +384,7 @@ proc loadconfig {} {
     }
     # Devices
     mk::view layout cfg.devices {
-        name ip port
+        name ip port dis
     }
     if {[catch {hvConfig Geometry} geometry]} {
 	set geometry ""
@@ -466,6 +466,8 @@ proc cfg_server {} {
     grid rowconfigure .net.f.f1.ni .net.f.f1.ni.f -weight 1
     bind .net.f.f1.ni.f.tv <<TreeviewSelect>> {cfg_devicesel %W}
     bind .net.f.f1.ni.f.tv <Double-1> {cfg_namedbl %W %x %y}
+    catch {.net.f.f1.ni.f.tv tag configure blue -foreground blue}
+    catch {.net.f.f1.ni.f.tv tag configure black -foreground black}
     cfg_sortlist
 
     ttk::separator .net.f.f1.sep
@@ -631,11 +633,13 @@ proc cfg_namechgdlg {} {
 proc cfg_namechg {item} {
     global wemoname wemoip wemoport
 
-    lassign [.net.f.f1.ni.f.tv item $item -values] name ip
+    lassign [.net.f.f1.ni.f.tv item $item -values] name ip port
     set row [mk::select cfg.devices -exact name $name]
     
-    if {$wemoname eq $name && $wemoip eq $ip} {
-        # Name was not changed
+    if {$wemoname eq $name && $wemoip eq $ip && $wemoport eq $port} {
+        # Name & IP were not changed
+        destroy .net.usr
+        return
     } else {
         if {[llength [mk::select cfg.devices -exact name $wemoname]] &&  \
              $row != [mk::select cfg.devices -exact name $wemoname]} {
@@ -650,9 +654,9 @@ proc cfg_namechg {item} {
             return
         }
     }
-    mk::set cfg.devices!$row name $wemoname ip $wemoip port $wemoport
+    mk::set cfg.devices!$row name $wemoname ip $wemoip port $wemoport dis 0
     .net.f.f1.ni.f.tv item $item \
-      -values [list $wemoname $wemoip $wemoport]
+      -values [list $wemoname $wemoip $wemoport] -tags black
     destroy .net.usr
 }
 
@@ -759,7 +763,12 @@ proc cfg_sortlist {} {
     if {[winfo exist .net]} { 
         .net.f.f1.ni.f.tv delete [.net.f.f1.ni.f.tv children {}]
         foreach row $rows {
-            .net.f.f1.ni.f.tv insert {} end -values [mk::get cfg.devices!$row name ip port]
+            if {[mk::get cfg.devices!$row dis] == 1} {
+                set tag "blue"
+            } else {
+                set tag "black"
+            }
+            .net.f.f1.ni.f.tv insert {} end -values [mk::get cfg.devices!$row name ip port] -tags $tag
         }
     }
 }
@@ -772,8 +781,8 @@ proc cfg_nameadd {} {
           -message "Device $wemoname already exists"
         return
     }
-    set row [mk::row append cfg.devices name $wemoname ip $wemoip port $wemoport]
-    .net.f.f1.ni.f.tv insert {} end -values [list $wemoname $wemoip $wemoport]
+    set row [mk::row append cfg.devices name $wemoname ip $wemoip port $wemoport dis 0]
+    .net.f.f1.ni.f.tv insert {} end -values [list $wemoname $wemoip $wemoport] -tags black
     destroy .net.usr
 }
 
