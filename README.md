@@ -22,4 +22,5 @@ See Nassir Malik's tutorials for details if you need help doing this.
 1. Once you have it working via the Serial Command Test screen. you can include appropriate serial commands into your schedule.
 1. You can use NetIO to control the devices as well.
 
+
 See this Project's [Wiki page](https://github.com/rebel7580/ESP8266-Wemo-and-HomeVisionXL-Plug-in/wiki/ESP8266-Wemo-and-HomeVisionXL-Plug-in) for more details.
