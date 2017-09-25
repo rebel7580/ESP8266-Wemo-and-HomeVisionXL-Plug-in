@@ -1,12 +1,12 @@
 # Wemo plugin for HomeVision - Ron Boston
 # Parts borrowed from plug-ins written by Schelte Bron
 # Version 1.0
-# $Revision: 1.7 $
-# $Date: 2017/09/22 14:56:09 $
+# $Revision: 1.8 $
+# $Date: 2017/09/25 21:07:40 $
 
 hvImport debug
 
-set version {$Id: wemo.hap,v 1.7 2017/09/22 14:56:09 ron Exp $}
+set version {$Id: wemo.hap,v 1.8 2017/09/25 21:07:40 ron Exp $}
 debug "$version" blue
 
 tcl::tm::path add [file dirname [info script]]
@@ -35,6 +35,7 @@ set refresh 300
 set cfg(discover) 1
 set searchResults ""
 
+# Start the UDP M-Search for devices
 proc start_search {} {
     global udpChan
     global mcastaddr mcastport  serverport
@@ -65,6 +66,10 @@ proc start_search {} {
     debug "$msg" red
     puts $udpChan $msg
     flush $udpChan
+    
+    # Close the UDP channel after at least 20 seconds
+    after cancel closeUDP
+    after 20000 closeUDP
 }
 
 proc receiveUDP {} {
@@ -80,9 +85,9 @@ proc receiveUDP {} {
         set ldata [split $data \n]
         if {![string equal [lindex $ldata 0] "HTTP/1.1 200 OK"]} return
         set hdr [headers $ldata]
-	if {![dict exists $hdr st] || ![dict exists $hdr location]} return
-	if {"urn:Belkin:device:**" ni [dict get $hdr st]} return
-	if {[regexp {http://([0-9\.]+):([0-9]+)/*} [dict get $hdr location] --> ip port]} {
+        if {![dict exists $hdr st] || ![dict exists $hdr location]} return
+        if {"urn:Belkin:device:**" ni [dict get $hdr st]} return
+        if {[regexp {http://([0-9\.]+):([0-9]+)/*} [dict get $hdr location] --> ip port]} {
             debug "ip,port: $ip,$port"
             if {$cfg(discover)} {
                 regexp {^(uuid:.+)::.+$} [dict get $hdr usn] match usn
@@ -94,35 +99,44 @@ proc receiveUDP {} {
                 after 2000 getDeviceNames
             }
         }
-	if {[dict exists $hdr cache-control]} {
-	    set time [lindex [split [dict get $hdr cache-control] '='] 1]
-	    debug "time:$time" red
-	    if {$time < $refresh} {
-	        set time $refresh
-	    }
-	} else {
-	    set time $refresh
-	}
-	after cancel start_search
-	after [expr {$time * 1000}] start_search
-
-        after 2000 {
-            catch {close $udpChan}
-            debug "UDP closed" darkred
+        if {[dict exists $hdr cache-control]} {
+            set time [lindex [split [dict get $hdr cache-control] '='] 1]
+            debug "time:$time" red
+            if {$time < $refresh} {
+                set time $refresh
+            }
+        } else {
+            set time $refresh
         }
+        # set up a re-discovery after max-age time
+        after cancel start_search
+        after [expr {$time * 1000}] start_search
+
+        # Extend UDP time to allow more responses
+        after cancel closeUDP
+        after 5000 closeUDP
     } on return - {
-        debug "$data" blue
+        debug "no match: $data" blue
     }
 }
 
+# close UDP channel after timeout
+proc closeUDP {} {
+    global udpChan
+    
+    catch {close $udpChan}
+    debug "UDP closed" darkred
+}
+
+# unpack discovery headers into a dict
 proc headers {data} {
     set rc {}
     foreach line $data {
-	if {[regexp {^([^][()<>@,;:\\""/?={}\s]+):\s*(.*)} \
+        if {[regexp {^([^][()<>@,;:\\""/?={}\s]+):\s*(.*)} \
             [string trimright $line] -> name value]} {
-	    dict set rc [string tolower $name] $value
-	    debug "name:value: $name,$value" blue
-	}
+            dict set rc [string tolower $name] $value
+            debug "name:value: $name,$value" blue
+        }
     }
     return $rc
 }
@@ -131,24 +145,8 @@ proc headers {data} {
 
 # Start Http section
 
-set sockChan ""
+package require http
 package require tdom
-
-# Set up socket to Wemo Device
-proc startclient {ip port} {
-    global cfg sockChan
-
-    catch {close $sockChan}
-    debug "(Re)starting Client, $ip:$port" blue
-    if {[catch {socket $ip $port} sockChan]} {
-        debug "*** Client FAILED ***: $sockChan" red
-        return -code error $sockChan
-    }
-    chan configure $sockChan -blocking 0
-    debug "Client Started: $sockChan" darkslategray
-    chan event $sockChan readable [list readdata $sockChan]
-    return 1
-}
 
 proc getDeviceNames {} {
     global searchResults
@@ -158,12 +156,8 @@ proc getDeviceNames {} {
         if {[dict exists $searchResults $udn done]} {continue}
         dict with info {
             debug "found new entry: $info" green
-            dict set searchResults $udn done 1
-            set cmd "GET "
-            append cmd "/setup.xml HTTP/1.1" \n
-            append cmd "Content-Type: text/xml" \n
-            append cmd "Content-Length: 0" \n \n
-            sendCmd "" $cmd $ip $port
+            dict set searchResults $udn done 1            
+            sendCmd "" [list "text/xml" "setup.xml"] $ip $port
             after 200 getDeviceNames 
             return            
         }
@@ -172,7 +166,6 @@ proc getDeviceNames {} {
 
 # Get ip for device
 proc getip {name} {
-
      set n [mk::select cfg.devices!0 name $name]
      if {$n != {}} {
         return [mk::get cfg.devices!$n ip port]
@@ -182,9 +175,7 @@ proc getip {name} {
 }
 
 # Send command through socket
-proc sendCmd {name cmd {ip 0} {port 0}} {
-    global sockChan
-
+proc sendCmd {name cmdtype {ip 0} {port 0}} {
     lassign [getip $name] tip tport
     if {$ip != 0} {
     } elseif {$tip in {0 ""}} {
@@ -198,12 +189,21 @@ proc sendCmd {name cmd {ip 0} {port 0}} {
     } else {
         set port $tport
     }
-    if {[catch {startclient $ip $port}]} {return}
-    if {[catch {puts $sockChan $cmd} result]} {
-        debug "Write error: $result" red
+    if {[llength $cmdtype] == 1} {
+        set type = "text/plain"
+        set cmd $cmdtype
+    } elseif {[llength $cmdtype] == 2} {
+        lassign $cmdtype type cmd
+    } else {
+        return
     }
-    if {[catch {flush $sockChan} result]} {
-        debug "flush error $result" red
+    set url [format {http://%s:%s/%s} $ip $port $cmd]
+    if {[catch {http::geturl $url \
+                -command httpCB \
+                -type $type \
+                } token]} {
+        debug "error: $token" red
+        return
     }
 }
 
@@ -222,27 +222,29 @@ proc createCmd {cmd} {
         set state "power%20off"
     }
 
-    set data "GET "
-#    append data "/switch?st=" $state " HTTP/1.1" \n
-    append data "/cm?cmnd=" $state " HTTP/1.1" \n
-    append data "Content-Type: text/plain" \n
-    append data "Content-Length: 0" \n \n
-    return $data
+    append data "cm?cmnd=" $state
+    return [list "text/plain" $data]
 }
 
-# Read response
-proc readdata {f} {
-    set line ""
-    if {[eof $f] || [catch {gets $f line} result]} {
-        debug "no input" blue
-        close $f
-    } elseif {$result != -1} {
-        debug  "$line" green
-        if {[string match {<\?xml *} $line]} {
-            parseSetup $line
+# Read HTTP response
+proc httpCB {token} {
+    switch [http::ncode $token] {
+        200 {
+            set data [http::data $token]
+            http::cleanup $token
+            debug "data: $data" blue
+            if {[string match {<\?xml *} $data]} {
+                parseSetup $data
+            } else {
+                #other processing?
+            }
+            return $rc
         }
-    } else {
-        debug "Done"
+        default {
+            debug "Unknown error: [http::ncode $token] [http::status $token]" red
+            http::cleanup $token
+            return
+        }    
     }
 }
 
@@ -252,7 +254,6 @@ proc parseSetup {data} {
     
     # Hack to take off <?xml> tag
     set xml [string range $data 21 end]
-    
     if {[catch {dom parse $xml doc}]} {return}
 
     set root [$doc documentElement]
@@ -291,12 +292,10 @@ proc parseSetup {data} {
     set ip [dict get $searchResults $udn ip]
     set port [dict get $searchResults $udn port]
     set row [mk::select cfg.devices name $fn]
-    debug "ip:$ip;port:$port;row:$row;" red
     foreach i [lreverse $row] {
         mk::row delete cfg.devices!$i
     } 
     set row [mk::select cfg.devices ip $ip]
-    debug "ip:$ip;port:$port;row:$row;" red
     foreach i [lreverse $row] {
         mk::row delete cfg.devices!$i
     } 
@@ -387,7 +386,7 @@ proc loadconfig {} {
         name ip port dis
     }
     if {[catch {hvConfig Geometry} geometry]} {
-	set geometry ""
+        set geometry ""
     }
 
     # update config
@@ -466,6 +465,7 @@ proc cfg_server {} {
     grid rowconfigure .net.f.f1.ni .net.f.f1.ni.f -weight 1
     bind .net.f.f1.ni.f.tv <<TreeviewSelect>> {cfg_devicesel %W}
     bind .net.f.f1.ni.f.tv <Double-1> {cfg_namedbl %W %x %y}
+    destroy .rtclkMenu
     set m [menu .rtclkMenu]
     $m add command -label "Off" -command {cfg_rtclkdlg Off}
     $m add command -label "On" -command {cfg_rtclkdlg On}
@@ -589,12 +589,12 @@ proc cfg_validate {str type var} {
     upvar #0 $var other
      
     if {$var eq "wemoname"} {
-    	set name $other
-    	set ip $str
+        set name $other
+        set ip $str
         set port $wemoport
     } elseif {$var eq "wemoip"} {
-    	set ip $other
-    	set name $str
+        set ip $other
+        set name $str
         set port $wemoport
     } elseif {$var eq "wemoport"} {
         set port $str
@@ -623,25 +623,6 @@ proc cfg_validate {str type var} {
             return 1
         }
     }
-}
-
-proc old_cfg_namevalidate {str var} {
-
-    upvar #0 $var other
-    if {$var eq "wemoname"} {
-    	set name $other
-    	set ip $str
-    } else {
-    	set ip $other
-    	set name $str
-    }
-    if {[string length $name] < 3 || \
-        ![regexp {^[12]?[0-9]?[0-9](\.[12]?[0-9]?[0-9]){3}$} $ip match]} {
-        .net.usr.f.b1 state disabled
-    } else {
-        .net.usr.f.b1 state !disabled
-    }
-    return 1
 }
 
 proc cfg_namechgdlg {} {
@@ -822,8 +803,6 @@ proc cfg_namedel {} {
 }
 
 proc cfg_done {} {
-    global sockChan
-    
     saveconfig
     destroy .net
 }
