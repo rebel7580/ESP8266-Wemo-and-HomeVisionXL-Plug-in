@@ -1,12 +1,12 @@
 # Wemo plugin for HomeVision - Ron Boston
 # Parts borrowed from plug-ins written by Schelte Bron
 # Version 1.0
-# $Revision: 1.9 $
-# $Date: 2017/10/23 04:16:09 $
+# $Revision: 1.10 $
+# $Date: 2017/12/16 03:26:37 $
 
 hvImport debug
 
-set version {$Id: wemo.hap,v 1.9 2017/10/23 04:16:09 ron Exp $}
+set version {$Id: wemo.hap,v 1.10 2017/12/16 03:26:37 ron Exp $}
 debug "$version" blue
 
 tcl::tm::path add [file dirname [info script]]
@@ -240,21 +240,22 @@ proc httpCB {token} {
                 set fmt "{\"POWER\":\"(\\w+)\"}"
                 if {[regexp $fmt $data --> devstate]} {
                     debug "devstate:$devstate;" red 
+                    set devstate [string tolower $devstate]
                     if {[regexp {([0-9\.]+):([0-9]+)/*} $state(socketinfo) --> ip port]} {
                         debug "found ip, $ip, $port" red
                         set row [mk::select cfg.devices ip $ip]
                         set flag [mk::get cfg.devices!$row flag]
-                        if {$flag ne ""} {
-                            if {$devstate eq "ON"} {
+                        if {$flag != 256} {
+                            if {$devstate eq "on"} {
                                 set cmd [format {,>%02X01} $flag]
                                 catch {hvSendCommand $cmd 2000}
-                            } elseif {$devstate eq "OFF"} {
+                            } elseif {$devstate eq "off"} {
                                 set cmd [format {,>%02X00} $flag]
                                 catch {hvSendCommand $cmd 2000}
                             }
                         }
                     }
-                }
+            }
             }
             http::cleanup $token
             return $rc
@@ -671,7 +672,7 @@ proc cfg_device_chg {item} {
     if {$flag eq "-"} {set flag 256}
     set row [mk::select cfg.devices -exact name $name]
   debug "cfg_device_chg: $wemoname, $wemoip, $wemoport, $wemoflag;" blue
-   
+    
     if {$wemoname eq $name && $wemoip eq $ip && $wemoport eq $port && $wemoflag eq $flag} {
         # Name & IP were not changed
         destroy .net.usr
