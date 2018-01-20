@@ -1,12 +1,12 @@
 # Wemo plugin for HomeVision - Ron Boston
 # Parts borrowed from plug-ins written by Schelte Bron
 # Version 1.0
-# $Revision: 1.10 $
-# $Date: 2017/12/16 03:26:37 $
+# $Revision: 1.11 $
+# $Date: 2018/01/20 21:24:28 $
 
 hvImport debug
 
-set version {$Id: wemo.hap,v 1.10 2017/12/16 03:26:37 ron Exp $}
+set version {$Id: wemo.hap,v 1.11 2018/01/20 21:24:28 ron Exp $}
 debug "$version" blue
 
 tcl::tm::path add [file dirname [info script]]
@@ -255,7 +255,7 @@ proc httpCB {token} {
                             }
                         }
                     }
-            }
+                }
             }
             http::cleanup $token
             return $rc
@@ -272,8 +272,13 @@ proc httpCB {token} {
 proc parseSetup {data} {
     global searchResults
     
-    # Hack to take off <?xml> tag
+    # Hack to take off <?xml> tag and simplify root tag
+    debug "data:$data;" red   
     set xml [string range $data 21 end]
+    regexp {<root[^>]*} $xml match
+    set len [string length $match]
+    set xml "<root>[string range $xml $len+1 end]"
+    debug "trimmed xml:$xml;" red
     if {[catch {dom parse $xml doc}]} {return}
 
     set root [$doc documentElement]
@@ -637,7 +642,7 @@ proc cfg_validate {str type var} {
     set partialExp [subst -nocommands -nobackslashes $partialExp]
 
     if {[regexp -- $fullExp $ip] && \
-          [string length $name] >= 3 && [regexp {^[a-zA-Z]+$} $name] && \
+          [string length $name] >= 3 && [regexp {^\w+$} $name] && \
           $port > 0 && $port < 65536} {        
         .net.usr.f.b1 state !disabled
         return 1
@@ -672,7 +677,7 @@ proc cfg_device_chg {item} {
     if {$flag eq "-"} {set flag 256}
     set row [mk::select cfg.devices -exact name $name]
   debug "cfg_device_chg: $wemoname, $wemoip, $wemoport, $wemoflag;" blue
-    
+   
     if {$wemoname eq $name && $wemoip eq $ip && $wemoport eq $port && $wemoflag eq $flag} {
         # Name & IP were not changed
         destroy .net.usr
