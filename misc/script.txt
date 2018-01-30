@@ -1,53 +1,54 @@
 % Config params, overwrite any previous settings from the commandline
-% config bitrate  19200
-% config system_output    0
-
+% config bitrate 19200
+% config system_output 0
 on init
 % Subscribe
 do
-    subscribe local stat/Woonkmr/POWER
-    subscribe local stat/Buiten/POWER
-    subscribe local stat/SVTest/POWER
-%    ... (additional subscribes, one for each of the remaining devices)
-
+subscribe local stat/Woonkmr/POWER
+subscribe local stat/Buiten/POWER
+subscribe local stat/SVTest/POWER
+% ... (additional subscribes, one for each of the remaining devices)
 % Woonkmr -> flag 32
+
 on topic local stat/Woonkamer/POWER
 do
-    if $this_data = "on" then
-        println ",>2001"
-    else
-        if $this_data = "off" then
-            println ",>2000"
-        endif
-    endif
+	if $this_data = "on" then
+		serial_out ",>2001" | #0d
+	else
+		if $this_data = "off" then
+			serial_out ",>2000" | #0d
+		endif
+	endif
 
 % Buiten -> flag 33
 on topic local stat/Buiten/POWER
 do
-    if $this_data = "on" then
-        println ",>2101"
-    else
-        if $this_data = "off" then
-            println ",>2100"
-        endif
-    endif
+	if $this_data = "on" then
+		serial_out ",>2101" | #0d
+	else
+		if $this_data = "off" then
+			serial_out ",>2100" | #0d
+		endif
+	endif
 
 % SVTest -> flag 34
 on topic local stat/SVTest/POWER
 do
-    if $this_data = "on" then
-        println ",>2201"
-    else
-        if $this_data = "off" then
-            println ",>2200"
-        endif
-    endif
+	if $this_data = "on" then
+		serial_out ",>2201" | #0d
+	else
+		if $this_data = "off" then
+			serial_out ",>2200" | #0d
+		endif
+	endif
 
 %... (additional similar "on topic"s for each remaining device)
 
 on serial
 do
-    % parse inputs of the form: pub,{topic},{payload}
-    if csvstr($this_serial,0,",") = "pub" then
-        publish local csvstr($this_serial,1,",") csvstr($this_serial,2,",")
-    endif
+	% parse inputs of the form: pub,{topic},{payload}
+	setvar $topic_str = csvstr($this_serial,1,",")
+	setvar $data_str = csvstr($this_serial,2,",")
+	if csvstr($this_serial,0,",") = "pub" then
+		publish local $topic_str $data_str
+	endif
