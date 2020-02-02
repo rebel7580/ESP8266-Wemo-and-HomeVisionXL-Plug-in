@@ -8,8 +8,8 @@ subscribe local stat/Woonkmr/POWER
 subscribe local stat/Buiten/POWER
 subscribe local stat/SVTest/POWER
 % ... (additional subscribes, one for each of the remaining devices)
-% Woonkmr -> flag 32
 
+% Woonkmr -> flag 32
 on topic local stat/Woonkamer/POWER
 do
 	if $this_data = "on" then
